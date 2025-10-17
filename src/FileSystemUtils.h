@@ -20,6 +20,7 @@ public:
     static bool ReadFileToBuffer(const std::string& filePath, std::vector<char>& buffer);
     static bool WriteBufferToFile(const std::string& filePath, const char* data, size_t size);
     static bool DelFile(const std::string& filePath);
+    static bool FileExists(const std::string& filePath);
 };
 
 #endif // __FILESYSTEMUTILS_H__

@@ -12,6 +12,10 @@ using namespace PoDoFo;
 // PdfFiles CLASS
 // ============================================================================
 class PdfFiles final : public Component {
+
+private:
+    bool m_keepSourceFiles = false;
+
 public:
     // Component version
     const char* Version = "1.2.0";
@@ -21,6 +25,7 @@ public:
     std::string extensionName() override;
     void ADDIN_API Done() override;
 
+    bool DeleteOldOutputFiles(const std::string& folderPath, const std::string& outputFileName);
     bool MergePDFFiles(const variant_t& sourceFolderPath, const variant_t& outputFileName);
     bool MergePDFFilesWithSplit(const variant_t& sourceFolderPath, const variant_t& outputFileName, const variant_t& maxSizeMB);
 };

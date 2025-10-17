@@ -36,8 +36,29 @@ PdfFiles::PdfFiles() {
             else {
                 Logger::Debug("=== Logging disabled ===");
             }
-        }
-    );
+        });
+
+    // ========================================================================
+    // СВОЙСТВО: НеУдалятьИсходныеФайлы
+    // ========================================================================
+    AddProperty(L"KeepSourceFiles", L"НеУдалятьИсходныеФайлы",
+        [&]() {
+            return std::make_shared<variant_t>(m_keepSourceFiles);
+        },
+        [&](const variant_t& val) {
+            m_keepSourceFiles = VariantUtils::GetBool(val);
+
+            if (m_keepSourceFiles) {
+                Logger::Debug("=== Keep source files: ENABLED ===");
+                std::string message = "Source files will NOT be deleted after merge";
+                AddError(ADDIN_E_INFO, "KeepSourceFiles", message, false);
+            }
+            else {
+                Logger::Debug("=== Keep source files: DISABLED ===");
+                std::string message = "Source files WILL be deleted after merge";
+                AddError(ADDIN_E_INFO, "KeepSourceFiles", message, false);
+            }
+        });
 
     AddMethod(L"MergePDFFiles", L"ОбъединитьPDFФайлы", this, &PdfFiles::MergePDFFiles);
     AddMethod(L"MergePDFFilesWithSplit", L"ОбъединитьPDFФайлыСРазделением",
@@ -58,6 +79,58 @@ bool PdfFiles::MergePDFFiles(const variant_t& sourceFolderPath, const variant_t&
     return PdfFiles::MergePDFFilesWithSplit(sourceFolderPath, outputFileName, 0);
 }
 
+bool PdfFiles::DeleteOldOutputFiles(const std::string& folderPath, const std::string& outputFileName) {
+    Logger::Debug("Checking for old output files to delete...");
+
+    size_t dotPos = outputFileName.find_last_of('.');
+    std::string baseFileName = (dotPos != std::string::npos)
+        ? outputFileName.substr(0, dotPos)
+        : outputFileName;
+
+    Logger::Debug("Base file name: " + baseFileName);
+
+    std::vector<std::string> allFiles;
+    if (!FileSystemUtils::GetFilesFromDirectory(folderPath, allFiles)) {
+        Logger::Debug("Failed to read directory for cleanup");
+        return false;
+    }
+
+    size_t deletedCount = 0;
+
+    std::string mainFilePath = folderPath;
+    if (mainFilePath.back() != '\\') {
+        mainFilePath += '\\';
+    }
+    mainFilePath += outputFileName;
+
+    if (FileSystemUtils::FileExists(mainFilePath)) {
+        if (FileSystemUtils::DelFile(mainFilePath)) {
+            Logger::Debug("Deleted old main file: " + mainFilePath);
+            deletedCount++;
+        }
+    }
+
+    for (const auto& file : allFiles) {
+        std::string fileName = FileSystemUtils::GetFileName(file);
+
+        if (fileName.find(baseFileName) == 0 && fileName.find("_part") != std::string::npos) {
+            if (FileSystemUtils::DelFile(file)) {
+                Logger::Debug("Deleted old part file: " + file);
+                deletedCount++;
+            }
+        }
+    }
+
+    if (deletedCount > 0) {
+        Logger::Debug("Deleted " + std::to_string(deletedCount) + " old output file(s)");
+    }
+    else {
+        Logger::Debug("No old output files found");
+    }
+
+    return true;
+}
+
 bool PdfFiles::MergePDFFilesWithSplit(const variant_t& sourceFolderPath,
     const variant_t& outputFileName,
     const variant_t& maxSizeMB) {
@@ -75,6 +148,7 @@ bool PdfFiles::MergePDFFilesWithSplit(const variant_t& sourceFolderPath,
         Logger::Debug("Source folder: " + folderPath);
         Logger::Debug("Output file name: " + outputFileName_str);
         Logger::Debug("Max size (MB): " + std::to_string(sizeLimitMB));
+        Logger::Debug("Keep source files: " + std::string(m_keepSourceFiles ? "YES" : "NO"));
 
         if (folderPath.empty() || outputFileName_str.empty()) {
             Logger::Error("Empty paths provided");
@@ -98,6 +172,14 @@ bool PdfFiles::MergePDFFilesWithSplit(const variant_t& sourceFolderPath,
             return false;
         }
         Logger::Debug("Directory access OK");
+
+        // ====================================================================
+        // НОВОЕ: Удаление старых выходных файлов перед началом
+        // ====================================================================
+        Logger::Debug("Cleaning up old output files...");
+        if (!DeleteOldOutputFiles(folderPath, outputFileName_str)) {
+            Logger::Debug("Warning: Could not clean old output files, continuing anyway");
+        }
 
         Logger::Debug("Reading directory contents...");
         std::vector<std::string> allFiles;
@@ -162,20 +244,29 @@ bool PdfFiles::MergePDFFilesWithSplit(const variant_t& sourceFolderPath,
             }
         }
 
-        Logger::Debug("Deleting source files...");
-        size_t deletedCount = 0;
-        for (const auto& file : files) {
-            if (FileSystemUtils::DelFile(file)) {
-                deletedCount++;
-                Logger::Debug("Deleted: " + file);
-            }
-            else {
-                Logger::Debug("Failed to delete: " + file);
-            }
+        // ====================================================================
+        // Удаление исходных файлов согласно флагу
+        // ====================================================================
+        if (m_keepSourceFiles) {
+            Logger::Debug("Source files preservation enabled - skipping deletion");
+            Logger::Debug("=== MergePDFFilesWithSplit SUCCESS (files preserved) ===");
         }
-        Logger::Debug("Deleted " + std::to_string(deletedCount) + " source file(s)");
+        else {
+            Logger::Debug("Deleting source files...");
+            size_t deletedCount = 0;
+            for (const auto& file : files) {
+                if (FileSystemUtils::DelFile(file)) {
+                    deletedCount++;
+                    Logger::Debug("File deleted: " + file);
+                }
+                else {
+                    Logger::Debug("Failed to delete: " + file);
+                }
+            }
+            Logger::Debug("Deleted " + std::to_string(deletedCount) + " source file(s)");
+            Logger::Debug("=== MergePDFFilesWithSplit SUCCESS ===");
+        }
 
-        Logger::Debug("=== MergePDFFilesWithSplit SUCCESS ===");
         return true;
     }
     catch (const PoDoFo::PdfError& e) {

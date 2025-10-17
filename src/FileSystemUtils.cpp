@@ -374,3 +374,37 @@ bool FileSystemUtils::WriteBufferToFile(const std::string& filePath, const char*
     Logger::Debug("Successfully wrote " + std::to_string(bytesWritten) + " bytes to: " + filePath);
     return true;
 }
+
+bool FileSystemUtils::FileExists(const std::string& filePath) {
+    if (filePath.empty()) {
+        Logger::Debug("FileExists: empty path provided");
+        return false;
+    }
+
+    try {
+        std::wstring widePath = StringConverter::Utf8ToWide(filePath);
+        if (widePath.empty()) {
+            Logger::Debug("FileExists: failed to convert path to wide");
+            return false;
+        }
+
+        DWORD attributes = GetFileAttributesW(widePath.c_str());
+
+        if (attributes == INVALID_FILE_ATTRIBUTES) {
+            Logger::Debug("FileExists: file not found - " + filePath);
+            return false;
+        }
+
+        if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
+            Logger::Debug("FileExists: path is a directory, not a file - " + filePath);
+            return false;
+        }
+
+        Logger::Debug("FileExists: file found - " + filePath);
+        return true;
+    }
+    catch (const std::exception& e) {
+        Logger::Error("FileExists: exception - " + std::string(e.what()));
+        return false;
+    }
+}
